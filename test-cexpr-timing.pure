@@ -1,0 +1,61 @@
+using math;
+using system;
+using random;
+using cexpr;
+
+const Cx = c_variable "x";
+
+random_sum_expr n R = e n (uniform R)
+  with
+    e b x = (e (x*b) (uniform R)) + (e ((1-x)*b) (uniform R)) if b > 1;
+	  = x * Cx otherwise;
+  end;
+
+def measure x =
+  dt, result
+  when
+    t0 = gettimeofday;
+    result = x;
+    t1 = gettimeofday;
+    dt = t1 - t0;
+  end;
+
+c_string_size fp E = fputs (c_string E) fp;
+c_string_naive_size fp E = fputs (c_string_naive E) fp;
+c_string_list_size fp E = fputs (c_string_list E) fp;
+
+test N expr_size R =
+  loop N 0 0 0 0
+  with
+    loop r sum_s sum_n sum_l sum_p =
+      if r > 0 then
+	(loop (r-1) (sum_s+st) (sum_n+nt) (sum_l+lt) (sum_p+pt) (sum_c+ct))
+	when
+	  E = random_sum_expr expr_size R;
+	  st, s_size = measure (c_string_size fp E);
+	  printf "c_string: %f %d\n" (st, s_size);
+	  nt, n_size = measure (c_string_naive_size fp E);
+	  printf "c_string_naive: %f %d\n" (nt, n_size);
+	  lt, l_size = measure (c_string_list_size fp E);
+	  printf "c_string_list: %f %d\n" (lt, l_size);
+	  pt, p_size = measure (c_print fp E);
+	  printf "c_print: %f %d\n" (pt, p_size);
+	  ct, c_size = measure (c_count E);
+	  printf "c_count: %f %d\n" (ct, c_size);
+	end
+      else
+	(()
+	when
+	  printf "--\n" ();
+	  printf "c_string average: %f\n" (sum_s/N);
+	  printf "c_string_naive average: %f\n" (sum_n/N);
+	  printf "c_string_list average: %f\n" (sum_l/N);
+	  printf "c_print average: %f\n" (sum_p/N);
+	end);
+  end
+  when
+    fp = fopen "/dev/null" "w";
+  end;
+
+let R = new_random 42;
+let result = test 10 10000 R;

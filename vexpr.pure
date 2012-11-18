@@ -1,0 +1,87 @@
+/*
+    form a space from the parameters of an arbitrary expression,
+    and a distribution over the space...
+
+    operations needed:
+      1. take an expression with a number of slots, each containing a
+	 distribution, and turn it into a flat vector of samples
+      2. compute a weighted average of n such vectors (or any other vector
+	 space operations) -- just do this with lists or matrices
+      3. turn the resulting vector back into an expression with the same
+	 form (possibly applying some per-element transformation rule)
+ */
+
+using random;
+
+/* V is a constructor symbol indicating "this is a dimension of the parameter
+   space"; its argument can be a distribution, etc. */
+
+/* fold over elements of the parameter space */
+vfoldl f acc (V v) = f v acc;
+vfoldl f acc (g@_ x) = vfoldl f (vfoldl f acc g) x;
+vfoldl f acc _ = acc;
+
+vfoldr f acc (V v) = f v acc;
+vfoldr f acc (g@_ x) = vfoldr f (vfoldr f acc x) g;
+vfoldr f acc _ = acc;
+
+vflattenl e = vfoldl (:) [] e;
+vflattenr e = vfoldr (:) [] e;
+vdim e = vfoldr (\_ n -> n + 1) 0 e;
+
+/* map/iterate over parameters in an expression, yielding an expression of
+   the same form; (f parameter acc) returns (mapped parameter), (new acc)
+	vmapfoldl (\_ (v:vs) -> (V v), vs) (vflattenr E) E == E,[]
+	vmapfoldr (\_ (v:vs) -> (V v), vs) (vflattenl E) E == E,[]
+ */
+vmapfoldl f acc (V x)   = f x acc;
+vmapfoldl f acc (g@_ x) = (g1 x1), acc2
+			  when
+			    g1, acc1 = vmapfoldl f acc g;
+			    x1, acc2 = vmapfoldl f acc1 x;
+			  end;
+vmapfoldl f acc x       = x, acc;
+
+vmapfoldr f acc (V x)   = f x acc;
+vmapfoldr f acc (g@_ x) = (g1 x1), acc2
+			  when
+			    x1, acc1 = vmapfoldr f acc x;
+			    g1, acc2 = vmapfoldr f acc1 g;
+			  end;
+vmapfoldr f acc x       = x, acc;
+
+vunflattenl vs e = E
+  when
+    E, _ = vmapfoldl b vs e;
+  end
+  with
+    b _ (v:vs) = v, vs;
+  end;
+
+vunflattenr vs e = E
+  when
+    E, _ = vmapfoldr b vs e;
+  end
+  with
+    b _ (v:vs) = v, vs;
+  end;
+
+random_sign R = if (uniform R) < 0.5 then 1 else -1;
+
+vsample e R =
+  [sample v | v = vflattenl e]
+  with
+    sample (Exponential mu) = mu * (exponential R);
+    sample (Laplace mu) = mu * (random_sign R) * (exponential R);
+    sample (Gaussian mu sigma) = mu + sigma * (gaussian R);
+    sample (Uniform lo hi) = lo + (hi - lo) * (uniform R);
+    sample (Sparse p d) = if (uniform R) < p then (sample d) else 0;
+  end;
+
+esample e R = vunflattenr (vsample e R) e;
+
+vexponential mu = V (Exponential mu);
+vlaplace mu = V (Laplace mu);
+vgaussian mu sigma = V (Gaussian mu sigma);
+vuniform lo hi = V (Uniform lo hi);
+vsparse p (V d) = V (Sparse p d);

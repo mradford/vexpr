@@ -1,0 +1,195 @@
+using system;
+using math;
+using cbuf;
+
+extern double j0 (double);
+extern double j1 (double);
+
+bessel_J0 x::number = j0 (double x);
+bessel_J1 x::number = j1 (double x);
+
+/* promote a number to a constant C expression */
+c_constant x = CExpr (CConstant x);
+
+/* a named C variable, e.g., an argument to the generated function */
+c_variable x = CExpr (CVariable x);
+
+c_promote x = CExpr (promote x)
+  with
+    promote (CExpr x) = x;
+    promote x@(CConstant _) = x;
+    promote x@(CVariable _) = x;
+    promote x@(CInfix _ _ _) = x;
+    promote x@(CApply1 _ _) = x;
+    promote x@(CApply2 _ _ _) = x;
+    promote x::number = CConstant x;
+
+    promote (a + b) = CInfix "+" (promote a) (promote b);
+    promote (a - b) = CInfix "-" (promote a) (promote b);
+    promote (a * b) = CInfix "*" (promote a) (promote b);
+    promote (a / b) = CInfix "/" (promote a) (promote b);
+    promote (a ^ b) = CApply2 "pow" (promote a) (promote b);
+
+    promote (sin x)       = CApply1 "sin" (promote x);
+    promote (cos x)       = CApply1 "cos" (promote x);
+    promote (tan x)       = CApply1 "tan" (promote x);
+    promote (asin x)      = CApply1 "asin" (promote x);
+    promote (acos x)      = CApply1 "acos" (promote x);
+    promote (atan x)      = CApply1 "atan" (promote x);
+    promote (sinh x)      = CApply1 "sinh" (promote x);
+    promote (cosh x)      = CApply1 "cosh" (promote x);
+    promote (tanh x)      = CApply1 "tanh" (promote x);
+    promote (asinh x)     = CApply1 "asinh" (promote x);
+    promote (acosh x)     = CApply1 "acosh" (promote x);
+    promote (atanh x)     = CApply1 "atanh" (promote x);
+    promote (sqrt x)      = CApply1 "sqrt" (promote x);
+    promote (exp x)       = CApply1 "exp" (promote x);
+    promote (ln x)        = CApply1 "log" (promote x);
+    promote (bessel_J0 x) = CApply1 "j0" (promote x);
+    promote (bessel_J1 x) = CApply1 "j1" (promote x);
+
+    promote x = throw (unpromotable x);
+  end;
+
+simplify = reduce with
+  is_constant c x::number = x == c;
+  is_constant c (CExpr (CConstant x)) = x == c;
+  is_constant _ _ = false;
+  is_zero x = is_constant 0 x;
+  is_one x = is_constant 1 x;
+
+  a + zero = a if is_zero zero;
+  zero + b = b if is_zero zero;
+  a * zero = 0 if is_zero zero;
+  zero * b = 0 if is_zero zero;
+  zero / b = 0 if is_zero zero;
+
+  a * one = a if is_one one;
+  one * b = b if is_one one;
+  a / one = a if is_one one;
+
+  a^p = 1         if is_zero p;
+  a^p = a         if is_one p;
+  a^p = a * a     if is_constant 2 p;
+  a^p = a * a^2   if is_constant 3 p;
+  a^p = a^2 * a^2 if is_constant 4 p;
+
+/* TODO: rules that collect and combine constants in sums and products
+     a + (CExpr e) + c -> (a + c) + (CExpr e) */
+
+end;
+
+/* TODO: common subexpression elimination (via const double decls) */
+c_string (CExpr x) = str
+  when
+    buf = cbuf 4096;
+    emit x
+      with
+	emit (CConstant x) = append buf x;
+	emit (CVariable name) = append buf name;
+	emit (CInfix op a b) = ()
+	  when
+	    append buf "(";
+	    emit a;
+	    append buf op;
+	    emit b;
+	    append buf ")";
+	  end;
+	emit (CApply1 f x) = ()
+	  when
+	    append buf f;
+	    append buf "(";
+	    emit x;
+	    append buf ")";
+	  end;
+	emit (CApply2 f a b) = ()
+	  when
+	    append buf f;
+	    append buf "(";
+	    emit a;
+	    append buf ",";
+	    emit b;
+	    append buf ")";
+	  end;
+	emit x = throw (unemittable x);
+      end;
+    str = string buf;
+  end;
+c_string x = c_string (c_promote (simplify x));
+
+c_string_naive (CConstant x) = "(" + (sprintf "%.18g" (double x)) + ")";
+c_string_naive (CVariable x) = x;
+c_string_naive (CInfix op a b) =
+  "(" + (c_string_naive a) + op + (c_string_naive b) + ")";
+c_string_naive (CApply1 f x) =
+  f + "(" + (c_string_naive x) + ")";
+c_string_naive (CApply2 f a b) =
+  f + "(" + (c_string_naive a) + ", " + (c_string_naive b) + ")";
+c_string_naive (CExpr x) = c_string_naive x;
+c_string_naive x = c_string_naive (c_promote (simplify x));
+
+c_print fp (CConstant x) = fprintf fp "%.18g" (double x);
+c_print fp (CVariable name) = fputs name fp;
+c_print fp (CInfix op a b) = (fputs "(" fp)
+			   + (c_print fp a)
+			   + (fputs op fp)
+			   + (c_print fp b)
+			   + (fputs ")" fp);
+c_print fp (CApply1 f x) = (fputs f fp)
+			+ (fputs "(" fp)
+			+ (c_print fp x)
+			+ (fputs ")" fp);
+c_print fp (CApply2 f a b) = (fputs f fp)
+			    + (fputs "(" fp)
+			    + (c_print fp a)
+			    + (fputs "," fp)
+			    + (c_print fp b)
+			    + (fputs ")" fp);
+c_print fp (CExpr x) = c_print fp x;
+c_print fp x = c_print fp (c_promote (simplify x));
+
+c_count (CConstant x) = 1;
+c_count (CVariable name) = 1;
+c_count (CInfix op a b) = 1 + (c_count a) + (c_count b);
+c_count (CApply1 f x) = 1 + (c_count x);
+c_count (CApply2 f a b) = 1 + (c_count a) + (c_count b);
+c_count (CExpr x) = c_count x;
+c_count x = c_count (c_promote (simplify x));
+
+c_string_list (CExpr x) = str
+  when
+    pieces = reverse (emit x []);
+    str = strcat pieces;
+  end
+  with
+    emit (CConstant x) buf =
+      (sprintf "%.18g" (double x)):buf;
+    emit (CVariable name) buf =
+      name:buf;
+    emit (CInfix op a b) buf = buf5
+      when
+	buf1 = "(":buf;
+	buf2 = emit a buf1;
+	buf3 = op:buf2;
+	buf4 = emit b buf3;
+	buf5 = ")":buf4;
+      end;
+    emit (CApply1 f x) buf = buf4
+      when
+	buf1 = f:buf;
+	buf2 = "(":buf1;
+	buf3 = emit x buf2;
+	buf4 = ")":buf3;
+      end;
+    emit (CApply2 f a b) buf = buf6
+      when
+	buf1 = f:buf;
+	buf2 = "(":buf1;
+	buf3 = emit a buf2;
+	buf4 = ",":buf3;
+	buf5 = emit b buf4;
+	buf6 = ")":buf5;
+      end;
+    emit x buf = throw (unemittable x);
+  end;
+c_string_list x = c_string_list (c_promote (simplify x));

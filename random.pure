@@ -1,0 +1,47 @@
+using math;
+using pointers;
+
+extern double erand48 (short *);
+extern long jrand48 (short *);
+
+new_random seed = R
+  when
+    R = sentry free (pointer_cast "short *" (calloc 3 2));
+    put_short R 0x330e;
+    put_short (R + 1) (seed and 0xffff);
+    put_short (R + 2) ((seed >> 16) and 0xffff);
+  end;
+
+uniform R = erand48 R;
+
+uniform_int R = int (jrand48 R);
+
+exponential R =
+  if x == 0 then
+    exponential R
+  else
+    -ln x
+  when
+    x = uniform R;
+  end;
+
+// XXX wastes 1 of 2 variates
+gaussian R =
+  if 0 < r_squared && r_squared < 1 then
+    v1 * sqrt (-2 * ln r_squared / r_squared)
+  else
+    gaussian R
+  when
+    v1 = 2 * (uniform R) - 1;
+    v2 = 2 * (uniform R) - 1;
+    r_squared = v1 * v1 + v2 * v2;
+  end;
+
+geometric mu R =
+  g 0
+  with
+    g i = if (uniform R) < p then i else g (i + 1);
+  end
+  when
+    p = 1 / (1 + mu);
+  end;

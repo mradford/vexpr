@@ -1,0 +1,7 @@
+using system;
+using "bc:cbuf";
+
+cbuf alloc = CBuf (sentry cbuf_free (cbuf_new alloc));
+append b@(CBuf buf) str::string = cbuf_append buf str;
+append b@(CBuf buf) x::number = cbuf_append_double buf (double x);
+string (CBuf buf) = cbuf_string buf;

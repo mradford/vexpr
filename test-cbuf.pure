@@ -1,0 +1,9 @@
+using math;
+using cbuf;
+
+let b = cbuf 1024;
+append b "this is pi: ";
+append b pi;
+append b " and this is e: ";
+append b e;
+puts (string b);
